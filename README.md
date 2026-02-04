@@ -338,8 +338,6 @@ const payload = JSON.parse(
 
 - **[VISION.md](docs/VISION.md)** - Why decentralized identity for AI agents matters
 - **[GUIDE.md](docs/GUIDE.md)** - Complete usage guide with tutorials
-- **[W3C_COMPLIANCE.md](W3C_COMPLIANCE.md)** - Standards compliance report
-- **[MIGRATION_V2.md](MIGRATION_V2.md)** - VC Data Model v1.1 → v2.0 migration
 - **[examples/](examples/)** - Integration examples
 
 ---
