@@ -1,7 +1,7 @@
 import { sign, verify, bytesToBase64url, base64urlToBytes } from '../crypto';
 import { didKeyToPublicKey } from '../did';
 
-export type CredentialType = 'AgentOwnershipCredential' | 'AgentCapabilityCredential';
+export type CredentialType = 'AgentOwnershipCredential' | 'AgentCapabilityCredential' | 'AgentProfileCredential';
 
 export interface CredentialSubject {
   id: string; // Agent DID
@@ -93,6 +93,33 @@ export function createCapabilityCredential(
   }
 
   return credential;
+}
+
+/**
+ * Create a profile credential (self-issued by agent)
+ */
+export function createProfileCredential(
+  agentDid: string,
+  options: {
+    displayName?: string;
+    description?: string;
+    categories?: string[];
+    metadata?: Record<string, unknown>;
+  } = {}
+): VerifiableCredential {
+  return {
+    '@context': ['https://www.w3.org/2018/credentials/v1'],
+    type: ['VerifiableCredential', 'AgentProfileCredential'],
+    issuer: agentDid, // Self-issued
+    validFrom: new Date().toISOString(),
+    credentialSubject: {
+      id: agentDid,
+      ...(options.displayName && { displayName: options.displayName }),
+      ...(options.description && { description: options.description }),
+      ...(options.categories && { categories: options.categories }),
+      ...(options.metadata && { ...options.metadata }),
+    },
+  };
 }
 
 /**

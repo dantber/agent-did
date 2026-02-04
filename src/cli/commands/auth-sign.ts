@@ -10,10 +10,11 @@ export const authSignCommand = new Command('sign')
   .option('--domain <domain>', 'Domain (server domain)')
   .option('--expires-in <seconds>', 'Expiration time in seconds', '120')
   .option('-s, --store <path>', 'Keystore path')
+  .option('--no-encryption', 'Use unencrypted keystore')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
-      const keystore = await getExistingKeystore(options.store);
+      const keystore = await getExistingKeystore(options.store, options.noEncryption);
 
       // Validate identity
       const identity = await keystore.getIdentity(options.did);

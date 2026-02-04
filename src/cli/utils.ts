@@ -26,7 +26,11 @@ export async function getPassphrase(noEncryption = false): Promise<string | null
 
   // Option 2: Environment variable
   const envPassphrase = process.env.AGENT_DID_PASSPHRASE;
-  if (envPassphrase) {
+  if (envPassphrase !== undefined) {
+    // Empty string means no encryption
+    if (envPassphrase === '') {
+      return null;
+    }
     return envPassphrase;
   }
 
