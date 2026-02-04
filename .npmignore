@@ -1,0 +1,51 @@
+# Source files (only ship dist/)
+src/
+tests/
+*.test.ts
+*.spec.ts
+
+# Development files
+tsconfig.json
+jest.config.cjs
+eslint.config.mjs
+.prettierrc
+
+# Documentation for development
+W3C_COMPLIANCE.md
+MIGRATION_V2.md
+W3C_UPGRADE_SUMMARY.md
+HIGH_PRIORITY_FEATURES.md
+FIXES_SUMMARY.md
+CHANGELOG.md
+
+# CI/CD
+.github/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+
+# Test keystores
+.agent-did/
+test-keystore/
+*.keystore/
+
+# Temporary
+*.tmp
+tmp/

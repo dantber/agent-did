@@ -1,0 +1,69 @@
+{
+  "name": "agent-did",
+  "version": "0.1.0",
+  "description": "W3C-compliant DID and Verifiable Credential toolkit for AI agents. Cryptographic identity, ownership proofs, and capability delegation.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agent-did": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepublishOnly": "npm run build && npm test",
+    "build": "tsc",
+    "dev": "tsx src/cli/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "smoke": "node scripts/smoke-test.js",
+    "start": "node dist/cli/index.js"
+  },
+  "keywords": [
+    "did",
+    "decentralized-identity",
+    "verifiable-credentials",
+    "ai-agent",
+    "identity",
+    "cli",
+    "w3c",
+    "jwt",
+    "ed25519",
+    "cryptography",
+    "typescript",
+    "authentication",
+    "authorization"
+  ],
+  "author": "Bernardo Dantas",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dantber/agent-did.git"
+  },
+  "homepage": "https://agent-did.xyz",
+  "bugs": {
+    "url": "https://github.com/dantber/agent-did/issues"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "eslint": "^9.17.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.2",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
