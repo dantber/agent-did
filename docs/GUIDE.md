@@ -152,7 +152,7 @@ agent-did vc issue capability \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk... \
   --scopes "read,write,admin" \
-  --audience "https://api.example.com" \
+  --audience "https://agent-did.xyz" \
   --expires "2025-12-31T23:59:59Z" \
   --out capability.jwt
 ```
@@ -172,21 +172,26 @@ agent-did vc issue capability \
 
 **Choose one of three passphrase modes:**
 
-**A. Environment Variable** (Recommended for automation/CI-CD)
+**A. Role-specific environment variables** (Recommended for automation/CI-CD)
 ```bash
-# Create secure passphrase (16+ characters)
-export AGENT_DID_PASSPHRASE="your-very-secure-passphrase-here"
+# Create secure passphrases (16+ characters)
+export OWNER_DID_PASSPHRASE="owner-very-secure-passphrase"
+export AGENT_DID_PASSPHRASE="agent-very-secure-passphrase"
 
 # Optional: Set custom keystore location
 export AGENT_DID_HOME="$HOME/.my-agents"
 ```
 
+`AGENT_DID_OWNER_PASSPHRASE` is also accepted for owner/issuer operations. Legacy owner fallback from `AGENT_DID_PASSPHRASE` still works with a warning.
+
 **B. Interactive Prompt** (Best for manual terminal use)
 ```bash
 # No setup needed - you'll be prompted when running commands
 agent-did create owner --name "Acme Corp"
-# ⚠️  No passphrase found in AGENT_DID_PASSPHRASE environment variable.
-# Enter passphrase to encrypt keys: ********
+# Enter passphrase to encrypt ISSUER/OWNER DID key: ********
+
+agent-did create agent --name "Support Bot" --owner did:key:z6Mk...
+# Enter passphrase to encrypt AGENT DID key: ********
 ```
 
 **C. No Encryption** (Development/testing only - NOT for production)
@@ -236,6 +241,7 @@ createdAt   : 2024-01-15T10:30:00.000Z
 agent-did create agent \
   --name "Customer Support Bot" \
   --owner did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK
+# prompts for AGENT DID passphrase by default
 ```
 
 **Output:**
@@ -274,7 +280,7 @@ agent-did list
 #### 5. Issue Ownership Credential
 
 ```bash
-agent-did vc issue ownership \
+OWNER_DID_PASSPHRASE="$OWNER_PASS" agent-did vc issue ownership \
   --issuer did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK \
   --subject did:key:z6Mkj7yHGXW9TvRMu8HfkzZnT8sKN9mpPNTSFWAZSDzxe6V5 \
   --out ownership.jwt
@@ -336,6 +342,8 @@ agent-did create owner --name <name> [options]
 **Options:**
 - `--name <name>` - Name for this identity (required)
 - `--store <path>` - Custom keystore location (default: `~/.agent-did`)
+- `--owner-passphrase <passphrase>` - Passphrase for owner key encryption
+- `--no-encryption` - Store key unencrypted (testing only)
 - `--json` - Output as JSON
 
 **Examples:**
@@ -343,6 +351,9 @@ agent-did create owner --name <name> [options]
 ```bash
 # Basic usage
 agent-did create owner --name "My Company"
+
+# Non-interactive passphrase
+agent-did create owner --name "My Company" --owner-passphrase "$OWNER_DID_PASSPHRASE"
 
 # Custom keystore
 agent-did create owner --name "My Company" --store ./keystore
@@ -365,6 +376,10 @@ agent-did create agent --name <name> --owner <did> [options]
 - `--name <name>` - Name for this agent (required)
 - `--owner <did>` - Owner's DID (required)
 - `--store <path>` - Custom keystore location
+- `--agent-passphrase <passphrase>` - Passphrase for agent key encryption
+- `--reuse-owner-passphrase` - Explicitly reuse owner passphrase for agent key
+- `--owner-passphrase <passphrase>` - Owner passphrase (only with `--reuse-owner-passphrase`)
+- `--no-encryption` - Store key unencrypted (testing only)
 - `--json` - Output as JSON
 
 **Examples:**
@@ -374,6 +389,19 @@ agent-did create agent --name <name> --owner <did> [options]
 agent-did create agent \
   --name "Support Bot" \
   --owner did:key:z6Mk...
+
+# Explicit agent passphrase
+agent-did create agent \
+  --name "Support Bot" \
+  --owner did:key:z6Mk... \
+  --agent-passphrase "$AGENT_DID_PASSPHRASE"
+
+# Explicitly reuse owner passphrase (opt-in)
+agent-did create agent \
+  --name "Support Bot" \
+  --owner did:key:z6Mk... \
+  --reuse-owner-passphrase \
+  --owner-passphrase "$OWNER_DID_PASSPHRASE"
 
 # Multiple agents for different purposes
 agent-did create agent --name "Research Agent" --owner did:key:z6Mk...
@@ -481,6 +509,7 @@ agent-did vc issue ownership \
 **Options:**
 - `--issuer <did>` - Owner's DID (required)
 - `--subject <did>` - Agent's DID (required)
+- `--owner-passphrase <passphrase>` - Passphrase for issuer owner key decryption
 - `--out <file>` - Also save to file (optional)
 - `--no-store` - Skip keystore storage (for immediate API use)
 - `--store <path>` - Custom keystore location
@@ -490,7 +519,7 @@ agent-did vc issue ownership \
 
 ```bash
 # Basic ownership credential (auto-stored)
-agent-did vc issue ownership \
+OWNER_DID_PASSPHRASE="$OWNER_PASS" agent-did vc issue ownership \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk...
 # ✓ Stored in keystore: ~/.agent-did/credentials/ownership-391f062c...json
@@ -500,13 +529,14 @@ agent-did vc issue ownership \
 agent-did vc issue ownership \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk... \
+  --owner-passphrase "$OWNER_DID_PASSPHRASE" \
   --out ownership.jwt
 
 # Skip storage (for immediate API use)
 agent-did vc issue ownership \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk... \
-  --no-store | curl -X POST https://api.example.com/credentials
+  --no-store | curl -X POST https://agent-did.xyz/credentials
 ```
 
 ---
@@ -527,6 +557,7 @@ agent-did vc issue capability \
 - `--issuer <did>` - Owner's DID (required)
 - `--subject <did>` - Agent's DID (required)
 - `--scopes <scopes>` - Comma-separated permissions (required)
+- `--owner-passphrase <passphrase>` - Passphrase for issuer owner key decryption
 - `--audience <aud>` - Service this credential is for
 - `--expires <iso-date>` - Expiration date (ISO 8601)
 - `--out <file>` - Also save to file (optional)
@@ -558,7 +589,7 @@ agent-did vc issue capability \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk... \
   --scopes "api:read,api:write" \
-  --audience "https://api.example.com" \
+  --audience "https://agent-did.xyz" \
   --expires "2024-12-31T23:59:59Z" \
   --out capability.jwt
 
@@ -606,7 +637,7 @@ agent-did vc verify \
   --file capability.jwt \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk... \
-  --audience "https://api.example.com"
+  --audience "https://agent-did.xyz"
 
 # Automated check
 if agent-did vc verify --file capability.jwt --json | jq -e '.valid'; then
@@ -635,6 +666,7 @@ agent-did auth sign \
 **Options:**
 - `--did <did>` - Agent's DID (required)
 - `--challenge <nonce>` - Server-provided nonce (required)
+- `--agent-passphrase <passphrase>` - Passphrase for agent key decryption
 - `--audience <aud>` - Service identifier
 - `--domain <domain>` - Service domain
 - `--expires-in <seconds>` - Expiration in seconds (default: 120)
@@ -645,10 +677,10 @@ agent-did auth sign \
 
 ```bash
 # Sign authentication challenge
-agent-did auth sign \
+AGENT_DID_PASSPHRASE="$AGENT_PASS" agent-did auth sign \
   --did did:key:z6Mk... \
   --challenge "abc123xyz" \
-  --audience "api.example.com" \
+  --audience "agent-did.xyz" \
   --json > auth-response.json
 
 # With custom expiration (5 minutes)
@@ -763,17 +795,17 @@ app.post('/auth/challenge', (req, res) => {
 **Client (sign challenge):**
 ```bash
 # Get challenge
-CHALLENGE=$(curl -X POST https://api.example.com/auth/challenge | jq -r '.challenge')
+CHALLENGE=$(curl -X POST https://agent-did.xyz/auth/challenge | jq -r '.challenge')
 
 # Sign it
 agent-did auth sign \
   --did $AGENT_DID \
   --challenge "$CHALLENGE" \
-  --audience "api.example.com" \
+  --audience "agent-did.xyz" \
   --json > auth.json
 
 # Send to server
-curl -X POST https://api.example.com/auth/verify \
+curl -X POST https://agent-did.xyz/auth/verify \
   -H "Content-Type: application/json" \
   -d @auth.json
 ```
@@ -803,7 +835,7 @@ app.post('/auth/verify', async (req, res) => {
   }
 
   // 4. Verify audience
-  if (payload.aud !== 'api.example.com') {
+  if (payload.aud !== 'agent-did.xyz') {
     return res.status(401).json({ error: 'Invalid audience' });
   }
 

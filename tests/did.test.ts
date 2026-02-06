@@ -82,7 +82,7 @@ describe('DID operations', () => {
 
     it('should reject invalid did:key', () => {
       expect(isValidDidKey('')).toBe(false);
-      expect(isValidDidKey('did:web:example.com')).toBe(false);
+      expect(isValidDidKey('did:web:agent-did.xyz')).toBe(false);
       expect(isValidDidKey('not-a-did')).toBe(false);
       expect(isValidDidKey(null as unknown as string)).toBe(false);
       expect(isValidDidKey(undefined as unknown as string)).toBe(false);

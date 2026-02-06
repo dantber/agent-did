@@ -39,7 +39,7 @@ describe('Verifiable Credentials', () => {
     it('should create a valid capability credential', () => {
       const scopes = ['read', 'write'];
       const vc = createCapabilityCredential(ownerDid, agentDid, scopes, {
-        audience: 'https://api.example.com',
+        audience: 'https://agent-did.xyz',
         expires: '2025-12-31T23:59:59Z',
       });
 
@@ -48,7 +48,7 @@ describe('Verifiable Credentials', () => {
       expect(vc.issuer).toBe(ownerDid);
       expect(vc.credentialSubject.id).toBe(agentDid);
       expect(vc.credentialSubject.scopes).toEqual(scopes);
-      expect(vc.credentialSubject.audience).toBe('https://api.example.com');
+      expect(vc.credentialSubject.audience).toBe('https://agent-did.xyz');
       expect(vc.validUntil).toBe('2025-12-31T23:59:59Z');
     });
 
@@ -140,13 +140,13 @@ describe('Verifiable Credentials', () => {
 
     it('should enforce subject and audience expectations', async () => {
       const vc = createCapabilityCredential(ownerDid, agentDid, ['read'], {
-        audience: 'https://api.example.com',
+        audience: 'https://agent-did.xyz',
       });
       const jwt = await signCredential(vc, ownerKeyPair.privateKey, ownerKeyPair.publicKey);
 
       const ok = await verifyCredential(jwt, {
         expectedSubject: agentDid,
-        expectedAudience: 'https://api.example.com',
+        expectedAudience: 'https://agent-did.xyz',
       });
       expect(ok.valid).toBe(true);
 
@@ -154,7 +154,7 @@ describe('Verifiable Credentials', () => {
       expect(badSubject.valid).toBe(false);
       expect(badSubject.reason).toBe('Subject mismatch');
 
-      const badAudience = await verifyCredential(jwt, { expectedAudience: 'https://wrong.example.com' });
+      const badAudience = await verifyCredential(jwt, { expectedAudience: 'https://wrong.agent-did.xyz' });
       expect(badAudience.valid).toBe(false);
       expect(badAudience.reason).toBe('Audience mismatch');
     });

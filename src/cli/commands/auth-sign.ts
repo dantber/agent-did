@@ -1,6 +1,11 @@
 import { Command } from 'commander';
 import { signAuthChallenge } from '../../crypto/auth';
-import { getExistingKeystore, outputJson } from '../utils';
+import {
+  getExistingKeystore,
+  mapInvalidPassphraseError,
+  outputJson,
+  resolveRolePassphrase,
+} from '../utils';
 
 export const authSignCommand = new Command('sign')
   .description('Sign an authentication challenge')
@@ -9,21 +14,38 @@ export const authSignCommand = new Command('sign')
   .option('--audience <audience>', 'Audience (server identifier)')
   .option('--domain <domain>', 'Domain (server domain)')
   .option('--expires-in <seconds>', 'Expiration time in seconds', '120')
+  .option('--agent-passphrase <passphrase>', 'Passphrase for decrypting agent key')
   .option('-s, --store <path>', 'Keystore path')
   .option('--no-encryption', 'Use unencrypted keystore')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
-      const keystore = await getExistingKeystore(options.store, options.noEncryption);
+      const passphrase = await resolveRolePassphrase({
+        role: 'agent',
+        purpose: 'decrypt',
+        noEncryption: options.encryption === false,
+        passphraseFlagValue: options.agentPassphrase,
+        passphraseFlagName: '--agent-passphrase',
+      });
+      const keystore = await getExistingKeystore(
+        options.store,
+        options.encryption === false,
+        passphrase
+      );
 
       // Validate identity
       const identity = await keystore.getIdentity(options.did);
       if (!identity) {
         throw new Error(`Identity not found: ${options.did}`);
       }
+      if (identity.type !== 'agent') {
+        throw new Error(`Identity must be an agent DID: ${options.did}`);
+      }
 
       // Get key pair
-      const keyPair = await keystore.getKeyPair(options.did);
+      const keyPair = await keystore.getKeyPair(options.did).catch((error) => {
+        throw mapInvalidPassphraseError(error, 'agent', '--agent-passphrase');
+      });
 
       // Sign the challenge
       const result = await signAuthChallenge(

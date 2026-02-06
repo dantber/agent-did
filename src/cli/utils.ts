@@ -3,6 +3,172 @@ import * as os from 'os';
 import { Keystore } from '../keystore';
 import { promptPassword } from './prompt';
 
+export type PassphraseRole = 'owner' | 'agent';
+export type PassphrasePurpose = 'encrypt' | 'decrypt';
+
+const OWNER_PASSPHRASE_ENV = 'OWNER_DID_PASSPHRASE';
+const OWNER_PASSPHRASE_ENV_ALIAS = 'AGENT_DID_OWNER_PASSPHRASE';
+const AGENT_PASSPHRASE_ENV = 'AGENT_DID_PASSPHRASE';
+
+const PASSPHRASE_ERROR_CODES = {
+  ownerRequired: 'AGENT_DID_ERR_OWNER_PASSPHRASE_REQUIRED',
+  ownerInvalid: 'AGENT_DID_ERR_OWNER_PASSPHRASE_INVALID',
+  agentRequired: 'AGENT_DID_ERR_AGENT_PASSPHRASE_REQUIRED',
+  agentInvalid: 'AGENT_DID_ERR_AGENT_PASSPHRASE_INVALID',
+} as const;
+
+const issuedWarnings = new Set<string>();
+
+function withErrorCode(code: string, message: string): string {
+  return `[${code}] ${message}`;
+}
+
+function getRoleDisplayLabel(role: PassphraseRole): string {
+  if (role === 'owner') {
+    return 'ISSUER/OWNER DID key';
+  }
+  return 'AGENT DID key';
+}
+
+function getRoleEnvName(role: PassphraseRole): string {
+  if (role === 'owner') {
+    return OWNER_PASSPHRASE_ENV;
+  }
+  return AGENT_PASSPHRASE_ENV;
+}
+
+function getRequiredCode(role: PassphraseRole): string {
+  if (role === 'owner') {
+    return PASSPHRASE_ERROR_CODES.ownerRequired;
+  }
+  return PASSPHRASE_ERROR_CODES.agentRequired;
+}
+
+function getInvalidCode(role: PassphraseRole): string {
+  if (role === 'owner') {
+    return PASSPHRASE_ERROR_CODES.ownerInvalid;
+  }
+  return PASSPHRASE_ERROR_CODES.agentInvalid;
+}
+
+function buildRequiredPassphraseMessage(
+  role: PassphraseRole,
+  purpose: PassphrasePurpose,
+  flagName: '--owner-passphrase' | '--agent-passphrase'
+): string {
+  const action = purpose === 'encrypt' ? 'encrypt' : 'decrypt';
+  const message = `Passphrase required to ${action} ${getRoleDisplayLabel(role)}. Set ${getRoleEnvName(role)} or use ${flagName}.`;
+  return withErrorCode(getRequiredCode(role), message);
+}
+
+function defaultPrompt(role: PassphraseRole, purpose: PassphrasePurpose): string {
+  const action = purpose === 'encrypt' ? 'encrypt' : 'decrypt';
+  return `Enter passphrase to ${action} ${getRoleDisplayLabel(role)}: `;
+}
+
+function resolveFromEnv(role: PassphraseRole): string | null | undefined {
+  if (role === 'agent') {
+    const passphrase = process.env[AGENT_PASSPHRASE_ENV];
+    if (passphrase !== undefined) {
+      return passphrase === '' ? null : passphrase;
+    }
+    return undefined;
+  }
+
+  const ownerEnv = process.env[OWNER_PASSPHRASE_ENV];
+  if (ownerEnv !== undefined) {
+    return ownerEnv === '' ? null : ownerEnv;
+  }
+
+  const ownerAliasEnv = process.env[OWNER_PASSPHRASE_ENV_ALIAS];
+  if (ownerAliasEnv !== undefined) {
+    return ownerAliasEnv === '' ? null : ownerAliasEnv;
+  }
+
+  const legacyEnv = process.env[AGENT_PASSPHRASE_ENV];
+  if (legacyEnv !== undefined) {
+    const warningKey = `legacy-owner-fallback:${legacyEnv}`;
+    if (!issuedWarnings.has(warningKey)) {
+      issuedWarnings.add(warningKey);
+      console.warn(
+        `⚠️  ${AGENT_PASSPHRASE_ENV} is a legacy fallback for owner/issuer keys. Prefer ${OWNER_PASSPHRASE_ENV}.`
+      );
+    }
+    return legacyEnv === '' ? null : legacyEnv;
+  }
+
+  return undefined;
+}
+
+export async function resolveRolePassphrase(options: {
+  role: PassphraseRole;
+  purpose: PassphrasePurpose;
+  noEncryption?: boolean;
+  passphraseFlagValue?: string;
+  passphraseFlagName: '--owner-passphrase' | '--agent-passphrase';
+  promptText?: string;
+}): Promise<string | null> {
+  if (options.noEncryption) {
+    return null;
+  }
+
+  if (options.passphraseFlagValue !== undefined) {
+    return options.passphraseFlagValue === '' ? null : options.passphraseFlagValue;
+  }
+
+  const envPassphrase = resolveFromEnv(options.role);
+  if (envPassphrase !== undefined) {
+    return envPassphrase;
+  }
+
+  if (process.stdin.isTTY) {
+    try {
+      const promptText = options.promptText || defaultPrompt(options.role, options.purpose);
+      const passphrase = await promptPassword(promptText);
+      if (!passphrase) {
+        throw new Error(
+          buildRequiredPassphraseMessage(
+            options.role,
+            options.purpose,
+            options.passphraseFlagName
+          )
+        );
+      }
+      return passphrase;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('AGENT_DID_ERR_')) {
+        throw error;
+      }
+      throw new Error(
+        `Failed to get passphrase: ${error instanceof Error ? error.message : error}`
+      );
+    }
+  }
+
+  throw new Error(
+    buildRequiredPassphraseMessage(options.role, options.purpose, options.passphraseFlagName)
+  );
+}
+
+export function mapInvalidPassphraseError(
+  error: unknown,
+  role: PassphraseRole,
+  flagName: '--owner-passphrase' | '--agent-passphrase'
+): Error {
+  if (error instanceof Error && error.message === 'Authentication failed') {
+    return new Error(
+      withErrorCode(
+        getInvalidCode(role),
+        `Invalid passphrase for ${getRoleDisplayLabel(role)}. Set ${getRoleEnvName(role)} or use ${flagName}.`
+      )
+    );
+  }
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
 /**
  * Get the keystore path
  */
@@ -115,10 +281,12 @@ export function validateDid(did: string): void {
  */
 export async function getExistingKeystore(
   storePath?: string,
-  noEncryption = false
+  noEncryption = false,
+  passphraseOverride?: string | null
 ): Promise<Keystore> {
   const resolvedPath = getStorePath(storePath);
-  const passphrase = await getPassphrase(noEncryption);
+  const passphrase =
+    passphraseOverride !== undefined ? passphraseOverride : await getPassphrase(noEncryption);
   return new Keystore(resolvedPath, passphrase, true); // Skip validation
 }
 
@@ -128,10 +296,12 @@ export async function getExistingKeystore(
  */
 export async function getNewKeystore(
   storePath?: string,
-  noEncryption = false
+  noEncryption = false,
+  passphraseOverride?: string | null
 ): Promise<Keystore> {
   const resolvedPath = getStorePath(storePath);
-  const passphrase = await getPassphrase(noEncryption);
+  const passphrase =
+    passphraseOverride !== undefined ? passphraseOverride : await getPassphrase(noEncryption);
 
   if (noEncryption) {
     console.log('\n⚠️  WARNING: Keys will be stored UNENCRYPTED on disk!');

@@ -1,25 +1,68 @@
 import { Command } from 'commander';
 import { generateKeyPair } from '../../crypto';
 import { publicKeyToDidKey } from '../../did';
-import { getExistingKeystore, getStorePath, outputJson, outputTable } from '../utils';
+import {
+  getExistingKeystore,
+  getNewKeystore,
+  getStorePath,
+  outputJson,
+  outputTable,
+  resolveRolePassphrase,
+} from '../utils';
 
 export const createAgentCommand = new Command('agent')
   .description('Create a new agent identity linked to an owner')
   .requiredOption('-n, --name <name>', 'Name for the agent identity')
   .requiredOption('--owner <did>', 'Owner DID')
   .option('-s, --store <path>', 'Keystore path (default: ~/.agent-did)')
+  .option('--agent-passphrase <passphrase>', 'Passphrase for encrypting the agent key')
+  .option('--owner-passphrase <passphrase>', 'Owner passphrase (with --reuse-owner-passphrase)')
+  .option(
+    '--reuse-owner-passphrase',
+    'Reuse owner passphrase to encrypt the agent key (opt-in)'
+  )
   .option('--no-encryption', 'Store keys unencrypted (NOT RECOMMENDED)')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
       const storePath = getStorePath(options.store);
+      const noEncryption = options.encryption === false;
 
-      // Use existing keystore (owner should already exist)
-      const keystore = await getExistingKeystore(options.store, options.encryption === false);
-      await keystore.init();
+      if (options.reuseOwnerPassphrase && options.agentPassphrase !== undefined) {
+        throw new Error(
+          'Cannot combine --agent-passphrase with --reuse-owner-passphrase. Choose one source.'
+        );
+      }
+
+      if (!options.reuseOwnerPassphrase && options.ownerPassphrase !== undefined) {
+        throw new Error(
+          '--owner-passphrase requires --reuse-owner-passphrase when creating an agent.'
+        );
+      }
+
+      const agentPassphrase = options.reuseOwnerPassphrase
+        ? await resolveRolePassphrase({
+            role: 'owner',
+            purpose: 'encrypt',
+            noEncryption,
+            passphraseFlagValue: options.ownerPassphrase,
+            passphraseFlagName: '--owner-passphrase',
+            promptText: 'Enter owner passphrase to encrypt AGENT DID key: ',
+          })
+        : await resolveRolePassphrase({
+            role: 'agent',
+            purpose: 'encrypt',
+            noEncryption,
+            passphraseFlagValue: options.agentPassphrase,
+            passphraseFlagName: '--agent-passphrase',
+          });
+
+      // Owner metadata lookup does not require decrypting keys.
+      const metadataKeystore = await getExistingKeystore(options.store, true, null);
+      await metadataKeystore.init();
 
       // Validate owner exists
-      const ownerIdentity = await keystore.getIdentity(options.owner);
+      const ownerIdentity = await metadataKeystore.getIdentity(options.owner);
       if (!ownerIdentity) {
         throw new Error(`Owner identity not found: ${options.owner}`);
       }
@@ -42,7 +85,8 @@ export const createAgentCommand = new Command('agent')
       };
 
       // Store identity
-      await keystore.storeIdentity(metadata, keyPair);
+      const writeKeystore = await getNewKeystore(options.store, noEncryption, agentPassphrase);
+      await writeKeystore.storeIdentity(metadata, keyPair);
 
       const output = {
         did,

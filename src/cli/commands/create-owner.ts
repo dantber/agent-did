@@ -1,20 +1,39 @@
 import { Command } from 'commander';
-import { generateKeyPair, KeyPair } from '../../crypto';
+import { generateKeyPair } from '../../crypto';
 import { publicKeyToDidKey } from '../../did';
-import { getNewKeystore, getStorePath, outputJson, outputTable } from '../utils';
+import {
+  getNewKeystore,
+  getStorePath,
+  outputJson,
+  outputTable,
+  resolveRolePassphrase,
+} from '../utils';
 
 export const createOwnerCommand = new Command('owner')
   .description('Create a new owner identity')
   .requiredOption('-n, --name <name>', 'Name for the owner identity')
   .option('-s, --store <path>', 'Keystore path (default: ~/.agent-did)')
+  .option('--owner-passphrase <passphrase>', 'Passphrase for encrypting owner key')
   .option('--no-encryption', 'Store keys unencrypted (NOT RECOMMENDED)')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
       const storePath = getStorePath(options.store);
 
+      const ownerPassphrase = await resolveRolePassphrase({
+        role: 'owner',
+        purpose: 'encrypt',
+        noEncryption: options.encryption === false,
+        passphraseFlagValue: options.ownerPassphrase,
+        passphraseFlagName: '--owner-passphrase',
+      });
+
       // Will validate passphrase strength for new keystore
-      const keystore = await getNewKeystore(options.store, options.encryption === false);
+      const keystore = await getNewKeystore(
+        options.store,
+        options.encryption === false,
+        ownerPassphrase
+      );
       await keystore.init();
 
       // Generate key pair

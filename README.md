@@ -45,21 +45,29 @@ npx agent-did --help
 
 ### 2. Set Passphrase (Choose One)
 
-**Option A: Environment Variable** (Recommended for automation)
+**Option A: Role-specific environment variables** (Recommended for automation)
 ```bash
-export AGENT_DID_PASSPHRASE="your-secure-passphrase-here"
+# Used for owner/issuer key operations (create owner, vc issue ownership/capability)
+export OWNER_DID_PASSPHRASE="owner-passphrase"
+
+# Used for agent key operations (create agent, auth sign, vc issue profile)
+export AGENT_DID_PASSPHRASE="agent-passphrase"
 ```
 
-**Option B: Interactive Prompt** (Best for manual use)
+`AGENT_DID_OWNER_PASSPHRASE` is also accepted for owner operations. Legacy owner fallback from `AGENT_DID_PASSPHRASE` still works with a warning.
+
+**Option B: Interactive prompt** (Best for manual use)
 ```bash
-# Just run commands - you'll be prompted for passphrase
-agent-did create owner --name "Acme Corp"
-# Enter passphrase to encrypt keys: ********
+# Owner key prompt
+agent-did create owner --name "Agent-DID XYZ"
+
+# Agent key prompt (separate passphrase by default)
+agent-did create agent --name "Support Bot" --owner did:key:z6MkhaXg...
 ```
 
-**Option C: No Encryption** (Development/testing only)
+**Option C: No encryption** (Development/testing only)
 ```bash
-agent-did create owner --name "Test" --no-encryption
+agent-did create owner --name "Agent-DID XYZ" --no-encryption
 ```
 
 > 💡 For production, use environment variable or interactive prompt. Store passphrase in password manager.
@@ -68,19 +76,21 @@ agent-did create owner --name "Test" --no-encryption
 
 ```bash
 # Create owner identity (you/your organization)
-agent-did create owner --name "Acme Corp"
+agent-did create owner --name "Agent-DID XYZ"
+# prompts for owner passphrase (unless --owner-passphrase or OWNER_DID_PASSPHRASE is set)
 
 # Create agent identity
 agent-did create agent \
   --name "Support Bot" \
   --owner did:key:z6MkhaXg...
+# prompts for AGENT passphrase by default (unless --agent-passphrase or AGENT_DID_PASSPHRASE is set)
 ```
 
 ### 4. Issue Credentials
 
 ```bash
 # Prove ownership (auto-stored in keystore)
-agent-did vc issue ownership \
+OWNER_DID_PASSPHRASE="owner-passphrase" agent-did vc issue ownership \
   --issuer did:key:z6MkhaXg... \
   --subject did:key:z6Mkj7yH...
 # ✓ Stored in keystore: ~/.agent-did/credentials/ownership-391f062c...json
@@ -94,7 +104,10 @@ agent-did vc issue capability \
 # ✓ Stored in keystore: ~/.agent-did/credentials/capability-f9b4e891...json
 
 # Optional: Also save to file
-agent-did vc issue ownership --issuer ... --subject ... --out ownership.jwt
+OWNER_DID_PASSPHRASE="owner-passphrase" agent-did vc issue ownership \
+  --issuer ... \
+  --subject ... \
+  --out ownership.jwt
 
 # Optional: Skip keystore storage (for immediate API use)
 agent-did vc issue capability --issuer ... --subject ... --no-store
@@ -104,6 +117,17 @@ agent-did vc issue capability --issuer ... --subject ... --no-store
 
 ```bash
 agent-did vc verify --file capability.jwt
+```
+
+### 6. Agent Signs Challenge
+
+```bash
+AGENT_DID_PASSPHRASE="agent-passphrase" agent-did auth sign \
+  --did did:key:z6Mkj7yH... \
+  --challenge "$NONCE" \
+  --audience "agent-did.xyz" \
+  --domain "agent-did.xyz" \
+  --json
 ```
 
 ---
@@ -149,10 +173,10 @@ Cryptographically signed claim about a subject.
 
 ```bash
 # Create owner
-agent-did create owner --name <name>
+agent-did create owner --name <name> [--owner-passphrase <passphrase>]
 
 # Create agent
-agent-did create agent --name <name> --owner <did>
+agent-did create agent --name <name> --owner <did> [--agent-passphrase <passphrase>]
 
 # List identities
 agent-did list
@@ -169,12 +193,14 @@ agent-did delete --did <did> --yes
 ```bash
 # Issue ownership VC (auto-stored in keystore)
 agent-did vc issue ownership \
-  --issuer <did> --subject <did>
+  --issuer <did> --subject <did> \
+  [--owner-passphrase <passphrase>]
 
 # Issue capability VC (auto-stored in keystore)
 agent-did vc issue capability \
   --issuer <did> --subject <did> \
   --scopes <scopes> \
+  [--owner-passphrase <passphrase>] \
   --expires <iso-date>
 
 # Optional flags:
@@ -204,6 +230,7 @@ agent-did vc inspect --file <file>
 agent-did auth sign \
   --did <did> \
   --challenge <nonce> \
+  [--agent-passphrase <passphrase>] \
   --audience <service> \
   --json
 
@@ -279,10 +306,10 @@ res.json({ challenge });
 
 **Client signs challenge:**
 ```bash
-agent-did auth sign \
+AGENT_DID_PASSPHRASE="agent-passphrase" agent-did auth sign \
   --did did:key:z6Mkj7yH... \
   --challenge "$CHALLENGE" \
-  --audience "api.example.com" \
+  --audience "agent-did.xyz" \
   --json > auth.json
 ```
 
@@ -324,7 +351,7 @@ const payload = JSON.parse(
 **Best Practices:**
 1. **Production:** Use encrypted keystore with strong passphrase (16+ chars)
 2. **Development:** Interactive prompt or `--no-encryption` for testing
-3. **CI/CD:** Set `AGENT_DID_PASSPHRASE` environment variable
+3. **CI/CD:** Set both `OWNER_DID_PASSPHRASE` and `AGENT_DID_PASSPHRASE` (or pass command flags)
 4. Rotate keys quarterly or after compromise
 5. Set expiration on all capability credentials
 6. Backup keystore regularly with encryption

@@ -24,13 +24,13 @@ describe('Auth signing', () => {
 
     it('should include optional fields', () => {
       const payload = createAuthPayload(did, 'challenge-123', {
-        audience: 'https://api.example.com',
-        domain: 'example.com',
+        audience: 'https://agent-did.xyz',
+        domain: 'agent-did.xyz',
         expiresIn: 300,
       });
 
-      expect(payload.aud).toBe('https://api.example.com');
-      expect(payload.domain).toBe('example.com');
+      expect(payload.aud).toBe('https://agent-did.xyz');
+      expect(payload.domain).toBe('agent-did.xyz');
     });
   });
 
@@ -70,13 +70,13 @@ describe('Auth signing', () => {
 
     it('should verify with expected audience and domain', async () => {
       const result = await signAuthChallenge(did, keyPair.privateKey, keyPair.publicKey, 'challenge', {
-        audience: 'api.example.com',
-        domain: 'example.com',
+        audience: 'agent-did.xyz',
+        domain: 'agent-did.xyz',
       });
 
       const verifyResult = await verifyAuthChallenge(did, result.payloadEncoded, result.signature, {
-        expectedAudience: 'api.example.com',
-        expectedDomain: 'example.com',
+        expectedAudience: 'agent-did.xyz',
+        expectedDomain: 'agent-did.xyz',
       });
       expect(verifyResult.valid).toBe(true);
 

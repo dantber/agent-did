@@ -1,6 +1,12 @@
 import { Command } from 'commander';
 import { createOwnershipCredential, createCapabilityCredential, createProfileCredential, signCredential } from '../../vc';
-import { getExistingKeystore, getStorePath, outputJson } from '../utils';
+import {
+  getExistingKeystore,
+  getStorePath,
+  mapInvalidPassphraseError,
+  outputJson,
+  resolveRolePassphrase,
+} from '../utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -11,13 +17,22 @@ const ownershipCommand = new Command('ownership')
   .requiredOption('--subject <did>', 'Agent DID (subject)')
   .option('-o, --out <file>', 'Output file path')
   .option('-s, --store <path>', 'Keystore path')
+  .option('--owner-passphrase <passphrase>', 'Passphrase for decrypting issuer owner key')
   .option('--no-encryption', 'Keys are stored unencrypted')
   .option('--no-store', 'Do not store credential in keystore')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
       const storePath = getStorePath(options.store);
-      const keystore = await getExistingKeystore(options.store, options.encryption === false);
+      const noEncryption = options.encryption === false;
+      const ownerPassphrase = await resolveRolePassphrase({
+        role: 'owner',
+        purpose: 'decrypt',
+        noEncryption,
+        passphraseFlagValue: options.ownerPassphrase,
+        passphraseFlagName: '--owner-passphrase',
+      });
+      const keystore = await getExistingKeystore(options.store, noEncryption, ownerPassphrase);
 
       // Validate issuer
       const issuer = await keystore.getIdentity(options.issuer);
@@ -41,7 +56,9 @@ const ownershipCommand = new Command('ownership')
       }
 
       // Get issuer's key pair
-      const issuerKeyPair = await keystore.getKeyPair(options.issuer);
+      const issuerKeyPair = await keystore.getKeyPair(options.issuer).catch((error) => {
+        throw mapInvalidPassphraseError(error, 'owner', '--owner-passphrase');
+      });
 
       // Create and sign credential
       const credential = createOwnershipCredential(options.issuer, options.subject, {
@@ -101,13 +118,22 @@ const capabilityCommand = new Command('capability')
   .option('--expires <date>', 'Expiration date (ISO 8601)')
   .option('-o, --out <file>', 'Output file path')
   .option('-s, --store <path>', 'Keystore path')
+  .option('--owner-passphrase <passphrase>', 'Passphrase for decrypting issuer owner key')
   .option('--no-encryption', 'Keys are stored unencrypted')
   .option('--no-store', 'Do not store credential in keystore')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
       const storePath = getStorePath(options.store);
-      const keystore = await getExistingKeystore(options.store, options.encryption === false);
+      const noEncryption = options.encryption === false;
+      const ownerPassphrase = await resolveRolePassphrase({
+        role: 'owner',
+        purpose: 'decrypt',
+        noEncryption,
+        passphraseFlagValue: options.ownerPassphrase,
+        passphraseFlagName: '--owner-passphrase',
+      });
+      const keystore = await getExistingKeystore(options.store, noEncryption, ownerPassphrase);
 
       // Validate issuer
       const issuer = await keystore.getIdentity(options.issuer);
@@ -140,7 +166,9 @@ const capabilityCommand = new Command('capability')
       }
 
       // Get issuer's key pair
-      const issuerKeyPair = await keystore.getKeyPair(options.issuer);
+      const issuerKeyPair = await keystore.getKeyPair(options.issuer).catch((error) => {
+        throw mapInvalidPassphraseError(error, 'owner', '--owner-passphrase');
+      });
 
       // Create and sign credential
       const credential = createCapabilityCredential(options.issuer, options.subject, scopes, {
@@ -204,13 +232,22 @@ const profileCommand = new Command('profile')
   .option('--categories <categories>', 'Comma-separated list of categories (e.g., ai,assistant,support)')
   .option('-o, --out <file>', 'Output file path')
   .option('-s, --store <path>', 'Keystore path')
+  .option('--agent-passphrase <passphrase>', 'Passphrase for decrypting agent key')
   .option('--no-encryption', 'Keys are stored unencrypted')
   .option('--no-store', 'Do not store credential in keystore')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
       const storePath = getStorePath(options.store);
-      const keystore = await getExistingKeystore(options.store, options.encryption === false);
+      const noEncryption = options.encryption === false;
+      const agentPassphrase = await resolveRolePassphrase({
+        role: 'agent',
+        purpose: 'decrypt',
+        noEncryption,
+        passphraseFlagValue: options.agentPassphrase,
+        passphraseFlagName: '--agent-passphrase',
+      });
+      const keystore = await getExistingKeystore(options.store, noEncryption, agentPassphrase);
 
       // Validate agent
       const agent = await keystore.getIdentity(options.did);
@@ -231,7 +268,9 @@ const profileCommand = new Command('profile')
       }
 
       // Get agent's key pair
-      const agentKeyPair = await keystore.getKeyPair(options.did);
+      const agentKeyPair = await keystore.getKeyPair(options.did).catch((error) => {
+        throw mapInvalidPassphraseError(error, 'agent', '--agent-passphrase');
+      });
 
       // Create and sign credential
       const credential = createProfileCredential(options.did, {

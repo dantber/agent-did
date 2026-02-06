@@ -1,6 +1,6 @@
 {
   "name": "agent-did",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "W3C-compliant DID and Verifiable Credential toolkit for AI agents. Cryptographic identity, ownership proofs, and capability delegation.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,6 +18,7 @@
     "dev": "tsx src/cli/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:acceptance:passphrases": "./scripts/acceptance-per-identity-passphrases.sh",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "smoke": "node scripts/smoke-test.js",
