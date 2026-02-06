@@ -1,6 +1,6 @@
 {
   "name": "agent-did",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "W3C-compliant DID and Verifiable Credential toolkit for AI agents. Cryptographic identity, ownership proofs, and capability delegation.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
