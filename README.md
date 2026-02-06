@@ -1,6 +1,6 @@
 # agent-did
 
-[![npm version](https://badge.fury.io/js/agent-did.svg)](https://www.npmjs.com/package/agent-did)
+[![npm version](https://img.shields.io/npm/v/agent-did)](https://www.npmjs.com/package/agent-did)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **W3C-compliant DID and Verifiable Credential toolkit for AI agents.**
