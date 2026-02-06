@@ -1,29 +1,49 @@
 import { Command } from 'commander';
-import { createOwnershipCredential, createCapabilityCredential, createProfileCredential, signCredential } from '../../vc';
+import {
+  createOwnershipCredential,
+  createCapabilityCredential,
+  createProfileCredential,
+  signCredential,
+  VerifiableCredential,
+} from '../../vc';
 import {
   getExistingKeystore,
   getStorePath,
   mapInvalidPassphraseError,
   outputJson,
+  resolveCliPath,
   resolveRolePassphrase,
 } from '../utils';
+import { getCanonicalVcDir, storeJwtInCanonicalVcDir } from '../vc-files';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+
+type PersistResult = {
+  credentialId?: string;
+  keystoreRecordPath?: string;
+  outputFilePath?: string;
+  canonicalVcPath?: string;
+};
 
 const ownershipCommand = new Command('ownership')
   .description('Issue an ownership credential to an agent')
   .requiredOption('--issuer <did>', 'Owner DID (issuer)')
   .requiredOption('--subject <did>', 'Agent DID (subject)')
-  .option('-o, --out <file>', 'Output file path')
+  .option(
+    '-o, --out <file>',
+    'Write JWT to this file (default: ~/.agent-did/vc/<auto>.jwt)'
+  )
   .option('-s, --store <path>', 'Keystore path')
   .option('--owner-passphrase <passphrase>', 'Passphrase for decrypting issuer owner key')
   .option('--no-encryption', 'Keys are stored unencrypted')
-  .option('--no-store', 'Do not store credential in keystore')
+  .option('--no-store', 'Do not store in keystore metadata or default VC directory')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
-      const storePath = getStorePath(options.store);
+      const storeOptionPath = resolveStoreOptionPath(options.store);
+      const storePath = getStorePath(storeOptionPath);
+      const shouldStore = shouldPersistCredential(options.store);
       const noEncryption = options.encryption === false;
       const ownerPassphrase = await resolveRolePassphrase({
         role: 'owner',
@@ -32,9 +52,8 @@ const ownershipCommand = new Command('ownership')
         passphraseFlagValue: options.ownerPassphrase,
         passphraseFlagName: '--owner-passphrase',
       });
-      const keystore = await getExistingKeystore(options.store, noEncryption, ownerPassphrase);
+      const keystore = await getExistingKeystore(storeOptionPath, noEncryption, ownerPassphrase);
 
-      // Validate issuer
       const issuer = await keystore.getIdentity(options.issuer);
       if (!issuer) {
         throw new Error(`Issuer not found: ${options.issuer}`);
@@ -43,7 +62,6 @@ const ownershipCommand = new Command('ownership')
         throw new Error(`Issuer must be an owner: ${options.issuer}`);
       }
 
-      // Validate subject
       const subject = await keystore.getIdentity(options.subject);
       if (!subject) {
         throw new Error(`Subject not found: ${options.subject}`);
@@ -55,51 +73,48 @@ const ownershipCommand = new Command('ownership')
         throw new Error(`Subject is not owned by issuer: ${options.issuer}`);
       }
 
-      // Get issuer's key pair
       const issuerKeyPair = await keystore.getKeyPair(options.issuer).catch((error) => {
         throw mapInvalidPassphraseError(error, 'owner', '--owner-passphrase');
       });
 
-      // Create and sign credential
       const credential = createOwnershipCredential(options.issuer, options.subject, {
         name: subject.name,
       });
+      const jwt = await signCredential(
+        credential,
+        issuerKeyPair.privateKey,
+        issuerKeyPair.publicKey
+      );
 
-      const jwt = await signCredential(credential, issuerKeyPair.privateKey, issuerKeyPair.publicKey);
-
-      // Store credential with secure random ID (unless --no-store)
-      let credId: string | undefined;
-      if (options.store !== false) {
-        credId = `ownership-${crypto.randomUUID()}`;
-        await keystore.storeCredential(credId, { jwt, credential });
-      }
+      const persisted = await persistIssuedCredential({
+        storePath,
+        shouldStore,
+        outPath: options.out,
+        credential,
+        jwt,
+        prefix: 'ownership',
+        saveMetadata: async (id) => keystore.storeCredential(id, { jwt, credential }),
+      });
 
       const output = {
         credential: jwt,
-        stored: credId !== undefined,
-        credentialId: credId,
+        stored: persisted.credentialId !== undefined,
+        credentialId: persisted.credentialId,
+        outputFile: persisted.outputFilePath,
+        vcFile: persisted.canonicalVcPath,
       };
-
-      if (options.out) {
-        await fs.promises.writeFile(options.out, JSON.stringify(output, null, 2));
-        console.log(`Credential written to: ${options.out}`);
-      }
 
       if (options.json) {
         console.log(outputJson(output));
       } else {
         console.log('\n✓ Ownership credential issued successfully');
-        if (credId) {
-          const credPath = path.join(storePath, 'credentials', `${credId}.json`);
-          console.log(`✓ Stored in keystore: ${credPath}`);
-        }
+        printStorageSummary(persisted);
         console.log(`\nIssuer:  ${issuer.name} (${options.issuer})`);
         console.log(`Subject: ${subject.name} (${options.subject})`);
-        if (credId) {
-          console.log(`\nView with: agent-did vc list`);
+        if (persisted.credentialId) {
+          console.log('\nView with: agent-did vc list');
         }
-
-        if (!options.out) {
+        if (!persisted.outputFilePath) {
           console.log(`\nCredential (JWT):\n${jwt}`);
         }
       }
@@ -116,15 +131,20 @@ const capabilityCommand = new Command('capability')
   .requiredOption('--scopes <scopes>', 'Comma-separated list of scopes (e.g., read,write)')
   .option('--audience <audience>', 'Audience for this credential')
   .option('--expires <date>', 'Expiration date (ISO 8601)')
-  .option('-o, --out <file>', 'Output file path')
+  .option(
+    '-o, --out <file>',
+    'Write JWT to this file (default: ~/.agent-did/vc/<auto>.jwt)'
+  )
   .option('-s, --store <path>', 'Keystore path')
   .option('--owner-passphrase <passphrase>', 'Passphrase for decrypting issuer owner key')
   .option('--no-encryption', 'Keys are stored unencrypted')
-  .option('--no-store', 'Do not store credential in keystore')
+  .option('--no-store', 'Do not store in keystore metadata or default VC directory')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
-      const storePath = getStorePath(options.store);
+      const storeOptionPath = resolveStoreOptionPath(options.store);
+      const storePath = getStorePath(storeOptionPath);
+      const shouldStore = shouldPersistCredential(options.store);
       const noEncryption = options.encryption === false;
       const ownerPassphrase = await resolveRolePassphrase({
         role: 'owner',
@@ -133,9 +153,8 @@ const capabilityCommand = new Command('capability')
         passphraseFlagValue: options.ownerPassphrase,
         passphraseFlagName: '--owner-passphrase',
       });
-      const keystore = await getExistingKeystore(options.store, noEncryption, ownerPassphrase);
+      const keystore = await getExistingKeystore(storeOptionPath, noEncryption, ownerPassphrase);
 
-      // Validate issuer
       const issuer = await keystore.getIdentity(options.issuer);
       if (!issuer) {
         throw new Error(`Issuer not found: ${options.issuer}`);
@@ -144,7 +163,6 @@ const capabilityCommand = new Command('capability')
         throw new Error(`Issuer must be an owner: ${options.issuer}`);
       }
 
-      // Validate subject
       const subject = await keystore.getIdentity(options.subject);
       if (!subject) {
         throw new Error(`Subject not found: ${options.subject}`);
@@ -156,65 +174,61 @@ const capabilityCommand = new Command('capability')
         throw new Error(`Subject is not owned by issuer: ${options.issuer}`);
       }
 
-      // Parse scopes
       const scopes = options.scopes
         .split(',')
-        .map((s: string) => s.trim())
-        .filter((s: string) => s.length > 0);
+        .map((scope: string) => scope.trim())
+        .filter((scope: string) => scope.length > 0);
       if (scopes.length === 0) {
         throw new Error('At least one scope is required');
       }
 
-      // Get issuer's key pair
       const issuerKeyPair = await keystore.getKeyPair(options.issuer).catch((error) => {
         throw mapInvalidPassphraseError(error, 'owner', '--owner-passphrase');
       });
 
-      // Create and sign credential
       const credential = createCapabilityCredential(options.issuer, options.subject, scopes, {
         audience: options.audience,
         expires: options.expires,
       });
+      const jwt = await signCredential(
+        credential,
+        issuerKeyPair.privateKey,
+        issuerKeyPair.publicKey
+      );
 
-      const jwt = await signCredential(credential, issuerKeyPair.privateKey, issuerKeyPair.publicKey);
-
-      // Store credential with secure random ID (unless --no-store)
-      let credId: string | undefined;
-      if (options.store !== false) {
-        credId = `capability-${crypto.randomUUID()}`;
-        await keystore.storeCredential(credId, { jwt, credential });
-      }
+      const persisted = await persistIssuedCredential({
+        storePath,
+        shouldStore,
+        outPath: options.out,
+        credential,
+        jwt,
+        prefix: 'capability',
+        saveMetadata: async (id) => keystore.storeCredential(id, { jwt, credential }),
+      });
 
       const output = {
         credential: jwt,
-        stored: credId !== undefined,
-        credentialId: credId,
+        stored: persisted.credentialId !== undefined,
+        credentialId: persisted.credentialId,
+        outputFile: persisted.outputFilePath,
+        vcFile: persisted.canonicalVcPath,
       };
-
-      if (options.out) {
-        await fs.promises.writeFile(options.out, JSON.stringify(output, null, 2));
-        console.log(`Credential written to: ${options.out}`);
-      }
 
       if (options.json) {
         console.log(outputJson(output));
       } else {
         console.log('\n✓ Capability credential issued successfully');
-        if (credId) {
-          const credPath = path.join(storePath, 'credentials', `${credId}.json`);
-          console.log(`✓ Stored in keystore: ${credPath}`);
-        }
+        printStorageSummary(persisted);
         console.log(`\nIssuer:  ${issuer.name} (${options.issuer})`);
         console.log(`Subject: ${subject.name} (${options.subject})`);
         console.log(`Scopes:  ${scopes.join(', ')}`);
         if (options.expires) {
           console.log(`Expires: ${options.expires}`);
         }
-        if (credId) {
-          console.log(`\nView with: agent-did vc list`);
+        if (persisted.credentialId) {
+          console.log('\nView with: agent-did vc list');
         }
-
-        if (!options.out) {
+        if (!persisted.outputFilePath) {
           console.log(`\nCredential (JWT):\n${jwt}`);
         }
       }
@@ -229,16 +243,24 @@ const profileCommand = new Command('profile')
   .requiredOption('--did <did>', 'Agent DID (issuer and subject)')
   .option('--name <name>', 'Display name for the agent')
   .option('--description <description>', 'Description of the agent')
-  .option('--categories <categories>', 'Comma-separated list of categories (e.g., ai,assistant,support)')
-  .option('-o, --out <file>', 'Output file path')
+  .option(
+    '--categories <categories>',
+    'Comma-separated list of categories (e.g., ai,assistant,support)'
+  )
+  .option(
+    '-o, --out <file>',
+    'Write JWT to this file (default: ~/.agent-did/vc/<auto>.jwt)'
+  )
   .option('-s, --store <path>', 'Keystore path')
   .option('--agent-passphrase <passphrase>', 'Passphrase for decrypting agent key')
   .option('--no-encryption', 'Keys are stored unencrypted')
-  .option('--no-store', 'Do not store credential in keystore')
+  .option('--no-store', 'Do not store in keystore metadata or default VC directory')
   .option('--json', 'Output as JSON')
   .action(async (options) => {
     try {
-      const storePath = getStorePath(options.store);
+      const storeOptionPath = resolveStoreOptionPath(options.store);
+      const storePath = getStorePath(storeOptionPath);
+      const shouldStore = shouldPersistCredential(options.store);
       const noEncryption = options.encryption === false;
       const agentPassphrase = await resolveRolePassphrase({
         role: 'agent',
@@ -247,9 +269,8 @@ const profileCommand = new Command('profile')
         passphraseFlagValue: options.agentPassphrase,
         passphraseFlagName: '--agent-passphrase',
       });
-      const keystore = await getExistingKeystore(options.store, noEncryption, agentPassphrase);
+      const keystore = await getExistingKeystore(storeOptionPath, noEncryption, agentPassphrase);
 
-      // Validate agent
       const agent = await keystore.getIdentity(options.did);
       if (!agent) {
         throw new Error(`Agent not found: ${options.did}`);
@@ -258,66 +279,62 @@ const profileCommand = new Command('profile')
         throw new Error(`Identity must be an agent: ${options.did}`);
       }
 
-      // Parse categories
       let categories: string[] | undefined;
       if (options.categories) {
         categories = options.categories
           .split(',')
-          .map((s: string) => s.trim())
-          .filter((s: string) => s.length > 0);
+          .map((category: string) => category.trim())
+          .filter((category: string) => category.length > 0);
       }
 
-      // Get agent's key pair
       const agentKeyPair = await keystore.getKeyPair(options.did).catch((error) => {
         throw mapInvalidPassphraseError(error, 'agent', '--agent-passphrase');
       });
 
-      // Create and sign credential
       const credential = createProfileCredential(options.did, {
         displayName: options.name || agent.name,
         description: options.description,
         categories,
       });
+      const jwt = await signCredential(
+        credential,
+        agentKeyPair.privateKey,
+        agentKeyPair.publicKey
+      );
 
-      const jwt = await signCredential(credential, agentKeyPair.privateKey, agentKeyPair.publicKey);
-
-      // Store credential with secure random ID (unless --no-store)
-      let credId: string | undefined;
-      if (options.store !== false) {
-        credId = `profile-${crypto.randomUUID()}`;
-        await keystore.storeCredential(credId, { jwt, credential });
-      }
+      const persisted = await persistIssuedCredential({
+        storePath,
+        shouldStore,
+        outPath: options.out,
+        credential,
+        jwt,
+        prefix: 'profile',
+        saveMetadata: async (id) => keystore.storeCredential(id, { jwt, credential }),
+      });
 
       const output = {
         credential: jwt,
-        stored: credId !== undefined,
-        credentialId: credId,
+        stored: persisted.credentialId !== undefined,
+        credentialId: persisted.credentialId,
+        outputFile: persisted.outputFilePath,
+        vcFile: persisted.canonicalVcPath,
       };
-
-      if (options.out) {
-        await fs.promises.writeFile(options.out, JSON.stringify(output, null, 2));
-        console.log(`Credential written to: ${options.out}`);
-      }
 
       if (options.json) {
         console.log(outputJson(output));
       } else {
         console.log('\n✓ Profile credential issued successfully');
-        if (credId) {
-          const credPath = path.join(storePath, 'credentials', `${credId}.json`);
-          console.log(`✓ Stored in keystore: ${credPath}`);
-        }
+        printStorageSummary(persisted);
         console.log(`\nAgent:       ${agent.name} (${options.did})`);
         if (options.name) console.log(`Display Name: ${options.name}`);
         if (options.description) console.log(`Description:  ${options.description}`);
         if (categories && categories.length > 0) {
           console.log(`Categories:   ${categories.join(', ')}`);
         }
-        if (credId) {
-          console.log(`\nView with: agent-did vc list`);
+        if (persisted.credentialId) {
+          console.log('\nView with: agent-did vc list');
         }
-
-        if (!options.out) {
+        if (!persisted.outputFilePath) {
           console.log(`\nCredential (JWT):\n${jwt}`);
         }
       }
@@ -332,3 +349,92 @@ export const vcIssueCommand = new Command('issue')
   .addCommand(ownershipCommand)
   .addCommand(capabilityCommand)
   .addCommand(profileCommand);
+
+export async function persistIssuedCredential(params: {
+  storePath: string;
+  shouldStore: boolean;
+  outPath?: string;
+  credential: VerifiableCredential;
+  jwt: string;
+  prefix: string;
+  saveMetadata: (credentialId: string) => Promise<void>;
+}): Promise<PersistResult> {
+  const result: PersistResult = {};
+  const canonicalVcDir = getCanonicalVcDir(params.storePath);
+
+  if (params.shouldStore) {
+    result.credentialId = `${params.prefix}-${crypto.randomUUID()}`;
+    await params.saveMetadata(result.credentialId);
+    result.keystoreRecordPath = path.join(
+      params.storePath,
+      'credentials',
+      `${result.credentialId}.json`
+    );
+  }
+
+  if (params.outPath) {
+    result.outputFilePath = await writeJwtFile(resolveCliPath(params.outPath), params.jwt);
+  }
+
+  if (params.shouldStore) {
+    if (
+      result.outputFilePath &&
+      pathIsWithinDirectory(result.outputFilePath, canonicalVcDir)
+    ) {
+      result.canonicalVcPath = result.outputFilePath;
+    } else {
+      result.canonicalVcPath = await storeJwtInCanonicalVcDir(
+        params.storePath,
+        params.jwt,
+        params.credential.type,
+        params.credential.credentialSubject.id
+      );
+    }
+  }
+
+  if (!result.outputFilePath && result.canonicalVcPath) {
+    result.outputFilePath = result.canonicalVcPath;
+  }
+
+  return result;
+}
+
+async function writeJwtFile(filePath: string, jwt: string): Promise<string> {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.promises.writeFile(filePath, `${jwt.trim()}\n`, 'utf-8');
+  try {
+    await fs.promises.chmod(filePath, 0o600);
+  } catch {
+    // Ignore permission errors on platforms that do not support chmod semantics.
+  }
+  return filePath;
+}
+
+function resolveStoreOptionPath(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function shouldPersistCredential(value: unknown): boolean {
+  return value !== false;
+}
+
+function pathIsWithinDirectory(candidatePath: string, parentPath: string): boolean {
+  const relative = path.relative(parentPath, candidatePath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function printStorageSummary(result: PersistResult): void {
+  if (result.keystoreRecordPath) {
+    console.log(`✓ Stored metadata in keystore: ${result.keystoreRecordPath}`);
+  }
+  if (result.outputFilePath) {
+    console.log(`✓ JWT file: ${result.outputFilePath}`);
+  }
+  if (
+    result.canonicalVcPath &&
+    result.outputFilePath &&
+    result.canonicalVcPath !== result.outputFilePath
+  ) {
+    console.log(`✓ Also stored in default VC directory: ${result.canonicalVcPath}`);
+  }
+}

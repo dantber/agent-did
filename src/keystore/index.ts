@@ -130,6 +130,8 @@ export class Keystore {
   async init(): Promise<void> {
     await fs.promises.mkdir(this.basePath, { recursive: true });
     await fs.promises.mkdir(path.join(this.basePath, STORAGE.KEYS_DIR), { recursive: true });
+    await fs.promises.mkdir(path.join(this.basePath, STORAGE.VC_DIR), { recursive: true });
+    await fs.promises.mkdir(path.join(this.basePath, STORAGE.BACKUPS_DIR), { recursive: true });
     await fs.promises.mkdir(path.join(this.basePath, STORAGE.CREDENTIALS_DIR), { recursive: true });
 
     // Create empty index if it doesn't exist
@@ -417,6 +419,19 @@ export class Keystore {
   async storeCredential(credentialId: string, credential: unknown): Promise<void> {
     const credPath = path.join(this.basePath, 'credentials', `${credentialId}.json`);
     await fs.promises.writeFile(credPath, JSON.stringify(credential, null, 2));
+    try {
+      await fs.promises.chmod(credPath, 0o600);
+    } catch {
+      // Ignore permission errors on Windows
+    }
+  }
+
+  /**
+   * Store a credential JWT using a deterministic filename.
+   */
+  async storeCredentialJwt(credentialId: string, jwt: string): Promise<void> {
+    const credPath = path.join(this.basePath, 'credentials', `${credentialId}.jwt`);
+    await fs.promises.writeFile(credPath, jwt);
     try {
       await fs.promises.chmod(credPath, 0o600);
     } catch {

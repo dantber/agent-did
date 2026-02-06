@@ -359,6 +359,17 @@ describe('Keystore', () => {
       expect(loaded).toEqual(credential);
     });
 
+    it('should store credential JWT files by deterministic credential id', async () => {
+      const did = 'did:key:z6Mktestsubject';
+      const jwt = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJkaWQ6a2V5Ono2TWt0ZXN0c3ViamVjdCJ9.signature';
+
+      await keystore.storeCredentialJwt(did, jwt);
+
+      const jwtPath = path.join(tempDir, 'credentials', `${did}.jwt`);
+      const storedJwt = await fs.promises.readFile(jwtPath, 'utf-8');
+      expect(storedJwt).toBe(jwt);
+    });
+
     it('should list stored credentials', async () => {
       const credential = { type: ['VerifiableCredential'], issuer: 'did:key:issuer' };
       await keystore.storeCredential('list-cred', credential);

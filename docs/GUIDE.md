@@ -497,7 +497,7 @@ fi
 
 #### vc issue ownership
 
-Issue an ownership credential. **Automatically stored in keystore** (`~/.agent-did/credentials/`).
+Issue an ownership credential. **Metadata is stored in** `~/.agent-did/credentials/` and JWT files are **canonically stored in** `~/.agent-did/vc/`.
 
 ```bash
 agent-did vc issue ownership \
@@ -510,8 +510,8 @@ agent-did vc issue ownership \
 - `--issuer <did>` - Owner's DID (required)
 - `--subject <did>` - Agent's DID (required)
 - `--owner-passphrase <passphrase>` - Passphrase for issuer owner key decryption
-- `--out <file>` - Also save to file (optional)
-- `--no-store` - Skip keystore storage (for immediate API use)
+- `--out <file>` - Write JWT to file (optional, still copied to `~/.agent-did/vc/` unless `--no-store`)
+- `--no-store` - Skip metadata storage and skip `~/.agent-did/vc/` storage
 - `--store <path>` - Custom keystore location
 - `--json` - Output as JSON
 
@@ -522,7 +522,8 @@ agent-did vc issue ownership \
 OWNER_DID_PASSPHRASE="$OWNER_PASS" agent-did vc issue ownership \
   --issuer did:key:z6Mk... \
   --subject did:key:z6Mk...
-# ✓ Stored in keystore: ~/.agent-did/credentials/ownership-391f062c...json
+# ✓ Stored metadata in keystore: ~/.agent-did/credentials/ownership-391f062c...json
+# ✓ JWT file: ~/.agent-did/vc/agent-ownership-credential-z6mk...jwt
 # View with: agent-did vc list
 
 # Also save to file
@@ -543,7 +544,7 @@ agent-did vc issue ownership \
 
 #### vc issue capability
 
-Issue a capability credential. **Automatically stored in keystore** (`~/.agent-did/credentials/`).
+Issue a capability credential. **Metadata is stored in** `~/.agent-did/credentials/` and JWT files are **canonically stored in** `~/.agent-did/vc/`.
 
 ```bash
 agent-did vc issue capability \
@@ -560,8 +561,8 @@ agent-did vc issue capability \
 - `--owner-passphrase <passphrase>` - Passphrase for issuer owner key decryption
 - `--audience <aud>` - Service this credential is for
 - `--expires <iso-date>` - Expiration date (ISO 8601)
-- `--out <file>` - Also save to file (optional)
-- `--no-store` - Skip keystore storage (for immediate API use)
+- `--out <file>` - Write JWT to file (optional, still copied to `~/.agent-did/vc/` unless `--no-store`)
+- `--no-store` - Skip metadata storage and skip `~/.agent-did/vc/` storage
 - `--store <path>` - Custom keystore location
 - `--json` - Output as JSON
 
@@ -1075,6 +1076,8 @@ openssl rand -base64 32
 ```bash
 # Verify keystore permissions
 ls -la ~/.agent-did/keys/
+ls -la ~/.agent-did/vc/
+ls -la ~/.agent-did/backups/
 
 # Should show: -rw------- (0o600)
 # If not, fix:
@@ -1085,6 +1088,9 @@ chmod 600 ~/.agent-did/keys/*
 ```bash
 # Check for issues
 agent-did keystore doctor
+
+# Copy legacy credentials/*.jwt into vc/
+agent-did keystore doctor --migrate-vc --yes
 ```
 
 ### Credential Lifecycle

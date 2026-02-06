@@ -1,4 +1,11 @@
-import { mapInvalidPassphraseError, resolveRolePassphrase } from '../src/cli/utils';
+import * as os from 'os';
+import * as path from 'path';
+import {
+  getStorePath,
+  mapInvalidPassphraseError,
+  resolveCliPath,
+  resolveRolePassphrase,
+} from '../src/cli/utils';
 
 describe('role-based passphrase resolution', () => {
   const originalEnv = process.env;
@@ -87,5 +94,33 @@ describe('invalid passphrase error mapping', () => {
     const original = new Error('Some other failure');
     const mapped = mapInvalidPassphraseError(original, 'agent', '--agent-passphrase');
     expect(mapped).toBe(original);
+  });
+});
+
+describe('path resolution', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.AGENT_DID_HOME;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('expands AGENT_DID_HOME values containing ~', () => {
+    process.env.AGENT_DID_HOME = '~/.agent-did-custom-home';
+    expect(getStorePath()).toBe(path.join(os.homedir(), '.agent-did-custom-home'));
+  });
+
+  it('expands custom --store paths containing ~', () => {
+    expect(getStorePath('~/custom-store')).toBe(path.join(os.homedir(), 'custom-store'));
+  });
+
+  it('resolves CLI output paths containing ~', () => {
+    expect(resolveCliPath('~/custom-output.jwt')).toBe(
+      path.join(os.homedir(), 'custom-output.jwt')
+    );
   });
 });

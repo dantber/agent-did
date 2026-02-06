@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { Keystore } from '../keystore';
 import { promptPassword } from './prompt';
+import { STORAGE } from '../constants';
 
 export type PassphraseRole = 'owner' | 'agent';
 export type PassphrasePurpose = 'encrypt' | 'decrypt';
@@ -173,8 +174,29 @@ export function mapInvalidPassphraseError(
  * Get the keystore path
  */
 export function getStorePath(customPath?: string): string {
-  if (customPath) return path.resolve(customPath);
-  return process.env.AGENT_DID_HOME || path.join(os.homedir(), '.agent-did');
+  if (customPath) {
+    return resolveCliPath(customPath);
+  }
+
+  if (process.env.AGENT_DID_HOME) {
+    return resolveCliPath(process.env.AGENT_DID_HOME);
+  }
+
+  return path.join(os.homedir(), STORAGE.DEFAULT_DIR_NAME);
+}
+
+export function resolveCliPath(inputPath: string): string {
+  return path.resolve(expandHomeDir(inputPath));
+}
+
+function expandHomeDir(inputPath: string): string {
+  if (inputPath === '~') {
+    return os.homedir();
+  }
+  if (inputPath.startsWith('~/') || inputPath.startsWith(`~${path.sep}`)) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  return inputPath;
 }
 
 /**

@@ -93,7 +93,8 @@ agent-did create agent \
 OWNER_DID_PASSPHRASE="owner-passphrase" agent-did vc issue ownership \
   --issuer did:key:z6MkhaXg... \
   --subject did:key:z6Mkj7yH...
-# ✓ Stored in keystore: ~/.agent-did/credentials/ownership-391f062c...json
+# ✓ Stored metadata in keystore: ~/.agent-did/credentials/ownership-391f062c...json
+# ✓ JWT file: ~/.agent-did/vc/agent-ownership-credential-z6mkj7yh...jwt
 
 # Grant capabilities (auto-stored in keystore)
 agent-did vc issue capability \
@@ -101,15 +102,16 @@ agent-did vc issue capability \
   --subject did:key:z6Mkj7yH... \
   --scopes "read,write,refund" \
   --expires "2025-12-31T23:59:59Z"
-# ✓ Stored in keystore: ~/.agent-did/credentials/capability-f9b4e891...json
+# ✓ Stored metadata in keystore: ~/.agent-did/credentials/capability-f9b4e891...json
+# ✓ JWT file: ~/.agent-did/vc/agent-capability-credential-z6mkj7yh...jwt
 
-# Optional: Also save to file
+# Optional: Also save to a custom file (still copied to ~/.agent-did/vc unless --no-store)
 OWNER_DID_PASSPHRASE="owner-passphrase" agent-did vc issue ownership \
   --issuer ... \
   --subject ... \
   --out ownership.jwt
 
-# Optional: Skip keystore storage (for immediate API use)
+# Optional: Skip keystore metadata + default vc storage (for immediate API use)
 agent-did vc issue capability --issuer ... --subject ... --no-store
 ```
 
@@ -204,11 +206,11 @@ agent-did vc issue capability \
   --expires <iso-date>
 
 # Optional flags:
-#   --out <file>     Also save to file
-#   --no-store       Skip keystore storage
+#   --out <file>     Write JWT file there and also store in ~/.agent-did/vc (unless --no-store)
+#   --no-store       Skip keystore metadata storage and skip ~/.agent-did/vc storage
 
-# List stored VCs
-agent-did vc list
+# List local VCs (scans ~/.agent-did/vc and legacy ~/.agent-did/credentials/*.jwt)
+agent-did vc list [--verify]
 
 # Verify VC
 agent-did vc verify --file <file>
@@ -280,11 +282,80 @@ agent-did vc check-credential-expiry --file <file>
 # Check keystore health
 agent-did keystore doctor
 
+# Include migration from legacy credentials/*.jwt to vc/
+agent-did keystore doctor --migrate-vc --yes
+
 # Backup keystore
 agent-did keystore backup --out backup.json --encrypt
 
 # Restore keystore
 agent-did keystore restore --file backup.json
+```
+
+### Default Storage Layout
+
+- `AGENT_DID_HOME` overrides home path; default is `~/.agent-did`
+- `~/.agent-did/keys/` - encrypted/decrypted key material files
+- `~/.agent-did/vc/` - canonical VC JWT storage (`*.jwt`)
+- `~/.agent-did/credentials/` - legacy/internal metadata storage (still scanned for `*.jwt`)
+- `~/.agent-did/backups/` - backup destination directory
+
+### Example Outputs
+
+**`agent-did vc list` with zero credentials**
+```text
+No credentials found.
+Scanned: /Users/you/.agent-did/vc
+Scanned (legacy): /Users/you/.agent-did/credentials
+```
+
+**`agent-did vc list` with two credentials**
+```text
+Found 2 credential(s):
+
+- File: agent-ownership-credential-z6mkj7yh-20260206T220153Z-a1b2c3.jwt
+  Types: VerifiableCredential, AgentOwnershipCredential
+  Issuer: did:key:z6MkhaXg...
+  Subject: did:key:z6Mkj7yH...
+  Issued: 2/6/2026, 10:01:53 PM
+
+- File: agent-capability-credential-z6mkj7yh-20260206T220245Z-d4e5f6.jwt
+  Types: VerifiableCredential, AgentCapabilityCredential
+  Issuer: did:key:z6MkhaXg...
+  Subject: did:key:z6Mkj7yH...
+  Issued: 2/6/2026, 10:02:45 PM
+  Expires: 12/31/2026, 11:59:59 PM
+```
+
+**`agent-did keystore doctor` healthy**
+```text
+Keystore Doctor
+Home: /Users/you/.agent-did
+Home source: default
+
+Directories:
+- keys: exists, writable, permissions OK (/Users/you/.agent-did/keys)
+- vc: exists, writable, permissions OK (/Users/you/.agent-did/vc)
+- backups: exists, writable, permissions OK (/Users/you/.agent-did/backups)
+
+Counts:
+- Identities: 2
+- Key files: 2
+- VC files: 2 (canonical: 2, legacy: 0)
+
+✓ Healthy keystore
+```
+
+**`agent-did keystore doctor` broken permissions**
+```text
+Keystore Doctor
+Home: /Users/you/.agent-did
+Home source: default
+
+Errors:
+- [error] weak-directory-permissions: Directory permissions allow group/other write access (/Users/you/.agent-did/keys)
+
+✗ Keystore health check failed
 ```
 
 **[Complete command reference →](docs/GUIDE.md#commands)**

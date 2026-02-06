@@ -64,6 +64,8 @@ export const STORAGE = {
   DEFAULT_DIR_NAME: '.agent-did' as const,
   INDEX_FILE: 'identities.json' as const,
   KEYS_DIR: 'keys' as const,
+  VC_DIR: 'vc' as const,
+  BACKUPS_DIR: 'backups' as const,
   CREDENTIALS_DIR: 'credentials' as const,
   FILE_PERMISSIONS: 0o600, // Owner read/write only
   TEMP_FILE_SUFFIX: '.tmp' as const,
